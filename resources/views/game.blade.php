@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Basketball Shooter</title>
+    <title>Hoopster</title>
     @vite(['resources/css/app.css', 'resources/js/app.js', 'resources/js/game.js'])
 </head>
 <body>
@@ -33,7 +33,7 @@
     </section>
 
     <section id="name-entry-screen" class="screen">
-        <h2 class="game-title small">You Finished All 15 Levels!</h2>
+        <h2 class="game-title small">You Finished All 10 Levels!</h2>
         <p class="subtext">Enter your name for the leaderboard</p>
         <input type="text" id="player-name-field" class="text-field" placeholder="Player" maxlength="20">
         <button id="submit-score-btn" class="btn-flat btn-game mt-3">Submit Score</button>
@@ -49,9 +49,9 @@
         <div id="game-wrapper">
 
             <div id="hud">
-                <span>Level: <span id="level-display">1</span> / 15</span>
+                <span>Level: <span id="level-display">1</span> / 10</span>
                 <span>Score: <span id="score-display">0</span></span>
-                <span id="aim-timer-display">Time: 4.0s</span>
+                <span id="aim-timer-display">Time: 5.0s</span>
                 <div id="wind-indicator">
                     Wind: <span id="wind-arrow">→</span>
                     <span id="wind-value">0</span>

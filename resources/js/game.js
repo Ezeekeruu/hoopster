@@ -23,13 +23,17 @@ function loadProgress() {
             return {
                 unlocked: [...new Set(parsed.unlocked || [0])],
                 completed: [...new Set(parsed.completed || [])],
+                totalScore: Number.isFinite(parsed.totalScore) ? parsed.totalScore : 0,
+                levelScores: parsed.levelScores && typeof parsed.levelScores === 'object' ? parsed.levelScores : {},
             };
         }
     } catch (e) { /* ignore corrupted data */ }
-    return { unlocked: [0], completed: [] };
+    return { unlocked: [0], completed: [], totalScore: 0, levelScores: {} };
 }
 
 function saveProgress() {
+    progress.totalScore = totalScore;
+    progress.levelScores = levelScores;
     localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
 }
 
@@ -94,8 +98,11 @@ function renderLevelGrid() {
 }
 
 document.getElementById('reset-all-btn').addEventListener('click', () => {
-    progress = { unlocked: [0], completed: [] };
+    totalScore = 0;
+    levelScores = {};
+    progress = { unlocked: [0], completed: [], totalScore: 0, levelScores: {} };
     saveProgress();
+    updateHUD();
     renderLevelGrid();
 });
 
@@ -160,26 +167,47 @@ document.getElementById('leaderboard-back-btn').addEventListener('click', () => 
     showScreen('levelSelect');
 });
 
+let isSubmittingScore = false;
+
 document.getElementById('submit-score-btn').addEventListener('click', () => {
+    if (isSubmittingScore) return;
+    const btn = document.getElementById('submit-score-btn');
     const field = document.getElementById('player-name-field');
     const name = field.value.trim() || 'Player';
 
-    document.getElementById('player-name-input').value = name;
-    document.getElementById('level-reached-input').value = currentLevel + 1;
-    document.getElementById('total-score-input').value = totalScore;
+    document.getElementById('player-name-input').value = name.slice(0, 20);
+    document.getElementById('level-reached-input').value = Math.min(Math.max(currentLevel + 1, 1), 10);
+    document.getElementById('total-score-input').value = Math.min(Math.max(totalScore, 0), 1000);
 
     const form = document.getElementById('score-form');
     const formData = new FormData(form);
 
+    isSubmittingScore = true;
+    btn.disabled = true;
+
     fetch('/scores', {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
         body: formData,
     })
-        .finally(() => {
+        .then(res => {
+            if (!res.ok) throw new Error(`Save failed (${res.status})`);
+            return res.json().catch(() => ({}));
+        })
+        .then(() => {
             field.value = '';
             fetchAndRenderLeaderboard();
             showScreen('leaderboard');
+        })
+        .catch(() => {
+            const list = document.getElementById('leaderboard-list');
+            fetchAndRenderLeaderboard();
+            showScreen('leaderboard');
+            if (list) list.innerHTML = '<li class="empty-message">Could not save score — please try again.</li>';
+        })
+        .finally(() => {
+            isSubmittingScore = false;
+            btn.disabled = false;
         });
 });
 
@@ -255,28 +283,24 @@ const POWER_SCALE = 6.5;
 const MAX_DRAG = 180;
 const RIM_RADIUS = 30;
 const WIND_SCALE = 3.5;
-const AIM_TIME_LIMIT = 3.5;
+const AIM_TIME_LIMIT = 5.0;
 
 const levels = [
-    { hoopX: 680, hoopY: 390, wind: 0, moving: false },
-    { hoopX: 740, hoopY: 365, wind: 0, moving: false },
-    { hoopX: 800, hoopY: 335, wind: 25, moving: false },
-    { hoopX: 860, hoopY: 300, wind: 35, moving: false },
-    { hoopX: 800, hoopY: 330, wind: 60, moving: false },
-    { hoopX: 850, hoopY: 305, wind: 100, moving: false },
+    { hoopX: 715, hoopY: 372, wind: 0, moving: false },
+    { hoopX: 775, hoopY: 347, wind: 0, moving: false },
+    { hoopX: 828, hoopY: 318, wind: 25, moving: false },
+    { hoopX: 888, hoopY: 283, wind: 35, moving: false },
+    { hoopX: 812, hoopY: 322, wind: 60, moving: false },
+    { hoopX: 862, hoopY: 297, wind: 100, moving: false },
     { hoopX: 800, hoopY: 320, wind: 70, moving: true, moveRangeX: 110, moveRangeY: 0, freqX: 1.6 },
     { hoopX: 840, hoopY: 300, wind: -90, moving: true, moveRangeX: 130, moveRangeY: 0, freqX: 2.0 },
     { hoopX: 820, hoopY: 290, wind: 40, moving: false, obstacle: { x: 560, y: 70, w: 22, h: 460 } },
     { hoopX: 860, hoopY: 270, wind: 90, moving: true, moveRangeX: 90, moveRangeY: 60, freqX: 1.9, freqY: 2.3, obstacle: { x: 580, y: 50, w: 22, h: 480 } },
-    { hoopX: 880, hoopY: 260, wind: 60, moving: true, moveRangeX: 130, moveRangeY: 0, freqX: 2.2 },
-    { hoopX: 840, hoopY: 250, wind: -75, moving: true, moveRangeX: 0, moveRangeY: 90, freqY: 2.1 },
-    { hoopX: 860, hoopY: 260, wind: 50, moving: false, obstacle: { x: 600, y: 40, w: 22, h: 500 }, aimTime: 5 },
-    { hoopX: 900, hoopY: 250, wind: 85, moving: true, moveRangeX: 110, moveRangeY: 70, freqX: 2.4, freqY: 2.8, aimTime: 5.5 },
-    { hoopX: 850, hoopY: 250, wind: -70, moving: true, moveRangeX: 90, moveRangeY: 60, freqX: 2.2, freqY: 2.6, obstacle: { x: 610, y: 120, w: 22, h: 440 }, aimTime: 6 },
 ];
 
 let currentLevel = 0;
-let totalScore = 0;
+let totalScore = progress.totalScore || 0;
+let levelScores = progress.levelScores || {};
 
 let missStreak = 0;
 
@@ -301,7 +325,7 @@ const SCORE_FALL_MS = 400;
 
 let aimTimerStart = performance.now();
 let resultShowing = false;
-let restingSince = null;
+let restTimer = 0;
 
 function getLevel() {
     return levels[currentLevel];
@@ -318,8 +342,19 @@ function resetBall() {
     ball.vy = 0;
     ball.flying = false;
     scoring = false;
-    restingSince = null;
+    restTimer = 0;
     aimTimerStart = performance.now();
+}
+
+function manualReset() {
+    // Restarting mid-flight counts as a miss so R/Restart can't wipe a bad shot.
+    if (scoring) return;
+    if (ball.flying && !resultShowing) {
+        missShot();
+        return;
+    }
+    if (resultShowing) hideOverlay();
+    resetBall();
 }
 
 function enterLevel(i) {
@@ -332,14 +367,12 @@ function enterLevel(i) {
 }
 
 document.getElementById('restart-btn').addEventListener('click', () => {
-    resetBall();
-    hideOverlay();
+    manualReset();
 });
 
 window.addEventListener('keydown', (e) => {
     if ((e.key === 'r' || e.key === 'R') && screens.game.classList.contains('active-screen')) {
-        resetBall();
-        hideOverlay();
+        manualReset();
     }
 });
 
@@ -400,9 +433,12 @@ function getBackboardRect() {
     return { x: hx + RIM_RADIUS - 2, y: hy - 42, w: 9, h: 78 };
 }
 
-function getRimPost() {
+function getRimPosts() {
     const { hx, hy } = getHoopCenter();
-    return { x: hx - RIM_RADIUS, y: hy };
+    return [
+        { x: hx - RIM_RADIUS, y: hy },
+        { x: hx + RIM_RADIUS, y: hy },
+    ];
 }
 
 function drawHoop() {
@@ -527,7 +563,10 @@ function drawTrajectoryPreview() {
     let simVx = vx;
     let simVy = vy;
 
-    const wind = getLevel().wind * WIND_SCALE;
+    const level = getLevel();
+    const wind = level.wind * WIND_SCALE;
+    const obs = level.obstacle;
+    const bb = getBackboardRect();
     const dt = 0.035;
     const maxSteps = 70;
 
@@ -540,6 +579,11 @@ function drawTrajectoryPreview() {
         simY += simVy * dt;
 
         if (simY - BALL_RADIUS > GROUND_Y || simX > canvas.width || simX < 0) break;
+        // Stop the preview where the real ball would stop: obstacle / backboard.
+        if (obs && simX + BALL_RADIUS > obs.x && simX - BALL_RADIUS < obs.x + obs.w
+            && simY + BALL_RADIUS > obs.y && simY - BALL_RADIUS < obs.y + obs.h) break;
+        if (simX + BALL_RADIUS > bb.x && simX - BALL_RADIUS < bb.x + bb.w
+            && simY + BALL_RADIUS > bb.y && simY - BALL_RADIUS < bb.y + bb.h) break;
 
         if (i % 2 === 0) {
             const radius = Math.max(4 - i * 0.05, 1.5);
@@ -548,6 +592,15 @@ function drawTrajectoryPreview() {
             ctx.fill();
         }
     }
+}
+
+function getAutoAimVelocity() {
+    // Aim at the current hoop with an upward arc instead of a blind fixed shot.
+    const { hx, hy } = getHoopCenter();
+    const dx = (hx - startX);
+    const dy = (hy - startY) - 150;
+    const dragDist = Math.min(Math.sqrt(dx * dx + dy * dy), MAX_DRAG);
+    return getLaunchVelocity(dragDist, dx, dy);
 }
 
 function updateWindUI() {
@@ -587,9 +640,9 @@ function autoFireIfExpired() {
         let dragDist = Math.min(Math.sqrt(dx * dx + dy * dy), MAX_DRAG);
 
         if (dragDist < 3) {
-            dx = 60;
-            dy = -60;
-            dragDist = Math.sqrt(dx * dx + dy * dy);
+            const auto = getAutoAimVelocity();
+            launchBall(auto.vx, auto.vy);
+            return;
         }
 
         const { vx, vy } = getLaunchVelocity(dragDist, dx, dy);
@@ -626,7 +679,7 @@ function stepPhysics(dt) {
     if (checkHoopScore(prevY)) return;
     handleRimBounce();
     handleBackboardCollision();
-    handleGroundCollision();
+    handleGroundCollision(dt);
     checkOffscreenMiss();
 
     if (ball.y > GROUND_Y) ball.y = GROUND_Y;
@@ -643,6 +696,21 @@ function checkObstacleHit() {
         ball.y + BALL_RADIUS > obs.y &&
         ball.y - BALL_RADIUS < obs.y + obs.h
     ) {
+        // Push out along the smallest penetration axis so the ball
+        // doesn't freeze visibly inside the block after the miss.
+        const penLeft = (ball.x + BALL_RADIUS) - obs.x;
+        const penRight = (obs.x + obs.w) - (ball.x - BALL_RADIUS);
+        const penTop = (ball.y + BALL_RADIUS) - obs.y;
+        const penBottom = (obs.y + obs.h) - (ball.y - BALL_RADIUS);
+        const pen = Math.min(penLeft, penRight, penTop, penBottom);
+
+        if (pen === penLeft) ball.x = obs.x - BALL_RADIUS;
+        else if (pen === penRight) ball.x = obs.x + obs.w + BALL_RADIUS;
+        else if (pen === penTop) ball.y = obs.y - BALL_RADIUS;
+        else ball.y = obs.y + obs.h + BALL_RADIUS;
+
+        ball.vx = 0;
+        ball.vy = 0;
         missShot();
         return true;
     }
@@ -650,39 +718,64 @@ function checkObstacleHit() {
 }
 
 function handleRimBounce() {
-    const post = getRimPost();
-    const dx = ball.x - post.x;
-    const dy = ball.y - post.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
     const minDist = BALL_RADIUS + 5;
 
-    if (dist < minDist && dist > 0.001) {
-        const nx = dx / dist;
-        const ny = dy / dist;
+    for (const post of getRimPosts()) {
+        const dx = ball.x - post.x;
+        const dy = ball.y - post.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-        ball.x = post.x + nx * minDist;
-        ball.y = post.y + ny * minDist;
+        if (dist < minDist && dist > 0.001) {
+            const nx = dx / dist;
+            const ny = dy / dist;
 
-        const dot = ball.vx * nx + ball.vy * ny;
-        ball.vx = (ball.vx - 2 * dot * nx) * 0.55;
-        ball.vy = (ball.vy - 2 * dot * ny) * 0.55;
+            ball.x = post.x + nx * minDist;
+            ball.y = post.y + ny * minDist;
+
+            const dot = ball.vx * nx + ball.vy * ny;
+            ball.vx = (ball.vx - 2 * dot * nx) * 0.55;
+            ball.vy = (ball.vy - 2 * dot * ny) * 0.55;
+        }
     }
 }
 
 function handleBackboardCollision() {
     const bb = getBackboardRect();
 
-    const enteringFromLeft =
-        ball.vx > 0 &&
-        ball.x + BALL_RADIUS >= bb.x &&
-        ball.x - BALL_RADIUS < bb.x &&
-        ball.y + BALL_RADIUS > bb.y &&
-        ball.y - BALL_RADIUS < bb.y + bb.h;
+    const overlapX = ball.x + BALL_RADIUS > bb.x && ball.x - BALL_RADIUS < bb.x + bb.w;
+    const overlapY = ball.y + BALL_RADIUS > bb.y && ball.y - BALL_RADIUS < bb.y + bb.h;
+    if (!overlapX || !overlapY) return;
 
-    if (enteringFromLeft) {
+    const penLeft = (ball.x + BALL_RADIUS) - bb.x;
+    const penRight = (bb.x + bb.w) - (ball.x - BALL_RADIUS);
+    const penTop = (ball.y + BALL_RADIUS) - bb.y;
+    const penBottom = (bb.y + bb.h) - (ball.y - BALL_RADIUS);
+    const pen = Math.min(penLeft, penRight, penTop, penBottom);
+
+    if (pen === penLeft) {
         ball.x = bb.x - BALL_RADIUS;
-        ball.vx = -ball.vx * 0.6;
-        ball.vy *= 0.9;
+        if (ball.vx > 0) {
+            ball.vx = -ball.vx * 0.6;
+            ball.vy *= 0.9;
+        }
+    } else if (pen === penRight) {
+        ball.x = bb.x + bb.w + BALL_RADIUS;
+        if (ball.vx < 0) {
+            ball.vx = -ball.vx * 0.6;
+            ball.vy *= 0.9;
+        }
+    } else if (pen === penTop) {
+        ball.y = bb.y - BALL_RADIUS;
+        if (ball.vy > 0) {
+            ball.vy = -ball.vy * 0.5;
+            ball.vx *= 0.9;
+        }
+    } else {
+        ball.y = bb.y + bb.h + BALL_RADIUS;
+        if (ball.vy < 0) {
+            ball.vy = -ball.vy * 0.5;
+            ball.vx *= 0.9;
+        }
     }
 }
 
@@ -693,10 +786,8 @@ function checkHoopScore(prevY) {
     if (Math.abs(dx) >= RIM_RADIUS - 12) return false;
     if (ball.vy <= 0) return false;
 
-    const crossedThisFrame = prevY <= hy && ball.y >= hy;
-    const closeEnough = Math.abs(ball.y - hy) < 8;
-
-    if (crossedThisFrame || closeEnough) {
+    // Require a real downward crossing of the rim plane — no proximity-only makes.
+    if (prevY <= hy && ball.y >= hy) {
         scoring = true;
         scoringStart = performance.now();
         return true;
@@ -704,29 +795,34 @@ function checkHoopScore(prevY) {
     return false;
 }
 
-function handleGroundCollision() {
-    if (ball.y < GROUND_Y) return;
+function handleGroundCollision(dt) {
+    if (ball.y < GROUND_Y) {
+        restTimer = 0;
+        return;
+    }
 
     ball.y = GROUND_Y;
 
     if (Math.abs(ball.vy) > 50) {
         ball.vy = -ball.vy * 0.45;
         ball.vx *= 0.7;
-        restingSince = null;
+        restTimer = 0;
         return;
     }
 
     ball.vy = 0;
     ball.vx *= 0.85;
 
-    if (restingSince === null) {
-        restingSince = performance.now();
+    // Settle using physics time: slow AND settled, not slow OR briefly touched.
+    if (Math.abs(ball.vx) < 15) {
+        restTimer += dt;
+    } else {
+        restTimer = 0;
     }
 
-    const restingElapsed = performance.now() - restingSince;
-
-    if (Math.abs(ball.vx) < 15 || restingElapsed > 350) {
+    if (restTimer > 0.35) {
         ball.vx = 0;
+        restTimer = 0;
         missShot();
     }
 }
@@ -741,8 +837,13 @@ function finalizeMadeShot() {
     scoring = false;
     ball.flying = false;
 
-    const points = Math.max(100 - missStreak * 20, 20);
-    totalScore += points;
+    // No replay farming: an already-completed level awards no extra points.
+    const alreadyCounted = isCompleted(currentLevel);
+    const points = alreadyCounted ? 0 : Math.max(100 - missStreak * 20, 20);
+    if (!alreadyCounted) {
+        totalScore += points;
+        levelScores[currentLevel] = points;
+    }
     missStreak = 0;
 
     netSwingActive = true;
@@ -848,10 +949,19 @@ function getCanvasCoords(e) {
     };
 }
 
-canvas.addEventListener('mousemove', (e) => {
-    const coords = getCanvasCoords(e);
-    mouseX = coords.x;
-    mouseY = coords.y;
+function getTouchCoords(touch) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: (touch.clientX - rect.left) * scaleX,
+        y: (touch.clientY - rect.top) * scaleY,
+    };
+}
+
+function updateAimFromPoint(x, y) {
+    mouseX = x;
+    mouseY = y;
     hovering = true;
 
     if (!ball.flying) {
@@ -860,6 +970,24 @@ canvas.addEventListener('mousemove', (e) => {
         const power = Math.min(Math.sqrt(dx * dx + dy * dy), MAX_DRAG);
         document.getElementById('power-bar-fill').style.width = `${(power / MAX_DRAG) * 100}%`;
     }
+}
+
+function shootFromPoint(x, y) {
+    if (ball.flying || resultShowing) return;
+
+    const dx = x - startX;
+    const dy = y - startY;
+    const dragDist = Math.min(Math.sqrt(dx * dx + dy * dy), MAX_DRAG);
+
+    if (dragDist < 3) return;
+
+    const { vx, vy } = getLaunchVelocity(dragDist, dx, dy);
+    launchBall(vx, vy);
+}
+
+canvas.addEventListener('mousemove', (e) => {
+    const coords = getCanvasCoords(e);
+    updateAimFromPoint(coords.x, coords.y);
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -867,18 +995,34 @@ canvas.addEventListener('mouseleave', () => {
 });
 
 canvas.addEventListener('click', (e) => {
-    if (ball.flying || resultShowing) return;
-
     const coords = getCanvasCoords(e);
-    const dx = coords.x - startX;
-    const dy = coords.y - startY;
-    const dragDist = Math.min(Math.sqrt(dx * dx + dy * dy), MAX_DRAG);
-
-    if (dragDist < 3) return;
-
-    const { vx, vy } = getLaunchVelocity(dragDist, dx, dy);
-    launchBall(vx, vy);
+    mouseX = coords.x;
+    mouseY = coords.y;
+    hovering = true;
+    shootFromPoint(coords.x, coords.y);
 });
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const coords = getTouchCoords(e.touches[0]);
+    updateAimFromPoint(coords.x, coords.y);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const coords = getTouchCoords(e.touches[0]);
+    updateAimFromPoint(coords.x, coords.y);
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (ball.flying || resultShowing) {
+        hovering = false;
+        return;
+    }
+    shootFromPoint(mouseX, mouseY);
+    hovering = false;
+}, { passive: false });
 
 let lastTime = performance.now();
 

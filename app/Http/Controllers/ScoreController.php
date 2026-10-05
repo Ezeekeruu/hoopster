@@ -16,51 +16,20 @@ class ScoreController extends Controller
         return response()->json($scores);
     }
 
-    public function create()
-    {
-        return view('scores.create');
-    }
-
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'player_name' => 'required|string|max:255',
-            'level_reached' => 'required|integer|min:1',
-            'total_score' => 'required|integer|min:0',
+            'player_name' => 'required|string|max:20',
+            'level_reached' => 'required|integer|min:1|max:10',
+            'total_score' => 'required|integer|min:0|max:1000',
         ]);
 
-        Score::create($validated);
+        $score = Score::create($validated);
+
+        if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return response()->json($score, 201);
+        }
 
         return redirect()->route('scores.index')->with('success', 'Score saved!');
-    }
-
-    public function show(Score $score)
-    {
-        return view('scores.show', compact('score'));
-    }
-
-    public function edit(Score $score)
-    {
-        return view('scores.edit', compact('score'));
-    }
-
-    public function update(Request $request, Score $score)
-    {
-        $validated = $request->validate([
-            'player_name' => 'required|string|max:255',
-            'level_reached' => 'required|integer|min:1',
-            'total_score' => 'required|integer|min:0',
-        ]);
-
-        $score->update($validated);
-
-        return redirect()->route('scores.index')->with('success', 'Score updated!');
-    }
-
-    public function destroy(Score $score)
-    {
-        $score->delete();
-
-        return redirect()->route('scores.index')->with('success', 'Score deleted!');
     }
 }
